@@ -12,6 +12,7 @@ import type { AuthContext } from '../types/auth';
 import type { StargazerListResponse } from '../types/stargazers';
 import { createRedisClient } from '../services/redis';
 import { checkGitHubRateLimit } from '../services/github-ratelimit';
+import { getStargazersFromCache, cacheStargazers } from '../services/cache';
 
 export async function handleStargazers(
   request: Request,
@@ -52,14 +53,53 @@ export async function handleStargazers(
 
   const redis = createRedisClient(env);
 
+  // Check cache first for fast responses
+  if (redis) {
+    try {
+      const cacheResult = await getStargazersFromCache(
+        redis,
+        owner,
+        repoName,
+        pagination.page,
+        pagination.perPage,
+      );
+
+      if (cacheResult.hit && cacheResult.data) {
+        const headers = new Headers();
+        headers.set('X-Cache', 'HIT');
+        if (cacheResult.age !== undefined) {
+          headers.set('X-Cache-Age', String(cacheResult.age));
+        }
+
+        if (pagination.wasPerPageCapped) {
+          headers.set('X-Per-Page-Capped', 'true');
+          headers.set('X-Per-Page-Requested', String(pagination.originalPerPage));
+        }
+
+        switch (formatParams.format) {
+          case 'json':
+            return buildJsonResponse(cacheResult.data, headers);
+          case 'csv':
+            return buildCsvResponse(cacheResult.data.data, owner, repoName, headers);
+          default:
+            return createErrorResponse('INVALID_FORMAT', 'Unknown format', 400);
+        }
+      }
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          message: 'Cache lookup failed, proceeding to fetch',
+          error: error instanceof Error ? error.message : 'Unknown error',
+        }),
+      );
+    }
+  }
+
   // Check GitHub rate limit before making API calls
   if (redis) {
     try {
-      const cacheKey = `stargazers:${owner}:${repoName}`;
-      const cachedData = await redis.get<string>(cacheKey);
-      const hasCachedData = cachedData !== null;
-
-      const githubRateCheck = await checkGitHubRateLimit(redis, hasCachedData);
+      const githubRateCheck = await checkGitHubRateLimit(redis, false);
 
       if (githubRateCheck.warning) {
         console.warn(
@@ -77,22 +117,9 @@ export async function handleStargazers(
             githubRateCheck.state!.resetAt,
           );
 
-        case 'use_cache':
-          return new Response(
-            typeof cachedData === 'string' ? cachedData : JSON.stringify(cachedData),
-            {
-              status: 200,
-              headers: {
-                'Content-Type': 'application/json',
-                'X-Cache': 'HIT',
-                'X-Cache-Reason': 'github-rate-limit',
-                'X-RateLimit-Reset': githubRateCheck.state!.resetAt,
-              },
-            },
-          );
-
         case 'proceed':
         case 'queue':
+        case 'use_cache':
           break;
       }
     } catch (error) {
@@ -118,6 +145,7 @@ export async function handleStargazers(
     );
 
     const headers = new Headers();
+    headers.set('X-Cache', 'MISS');
 
     if (pagination.wasPerPageCapped) {
       headers.set('X-Per-Page-Capped', 'true');
@@ -154,10 +182,16 @@ export async function handleStargazers(
         : null,
     };
 
-    // Cache the response for rate limit fallback
+    // Cache the response (fire-and-forget)
     if (redis) {
-      const cacheKey = `stargazers:${owner}:${repoName}`;
-      redis.set(cacheKey, JSON.stringify(responseData), { ex: 86400 }).catch((err) => {
+      cacheStargazers(
+        redis,
+        owner,
+        repoName,
+        pagination.page,
+        pagination.perPage,
+        responseData,
+      ).catch((err) => {
         console.warn(
           JSON.stringify({
             level: 'warn',
