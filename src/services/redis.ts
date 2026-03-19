@@ -1,10 +1,5 @@
 import { Redis } from '@upstash/redis/cloudflare';
-
-export interface RedisHealthStatus {
-  status: 'ok' | 'error';
-  latencyMs?: number;
-  error?: string;
-}
+import type { DependencyCheckResult } from '../types/health';
 
 export function createRedisClient(env: {
   UPSTASH_REDIS_REST_URL?: string;
@@ -38,9 +33,9 @@ export function createRedisClient(env: {
   }
 }
 
-export async function checkRedisHealth(client: Redis | null): Promise<RedisHealthStatus> {
+export async function checkRedisHealth(client: Redis | null): Promise<DependencyCheckResult> {
   if (!client) {
-    return { status: 'error', error: 'Redis client not configured' };
+    return { status: 'error', latencyMs: 0, error: 'Redis client not configured' };
   }
 
   const start = Date.now();
@@ -56,6 +51,6 @@ export async function checkRedisHealth(client: Redis | null): Promise<RedisHealt
         error: message,
       }),
     );
-    return { status: 'error', error: message };
+    return { status: 'error', latencyMs: Date.now() - start, error: message };
   }
 }

@@ -1,6 +1,7 @@
 import { graphql } from '@octokit/graphql';
 import { withRetry } from '../utils/retry';
-import { GitHubHealthStatus, TestConnectionResult } from '../types/github';
+import { TestConnectionResult } from '../types/github';
+import type { DependencyCheckResult } from '../types/health';
 
 const TEST_QUERY = `
   query TestConnection($owner: String!, $repo: String!) {
@@ -54,20 +55,16 @@ export async function testGitHubConnection(
   };
 }
 
-export async function checkGitHubHealth(token: string | undefined): Promise<GitHubHealthStatus> {
+export async function checkGitHubHealth(token: string | undefined): Promise<DependencyCheckResult> {
   if (!token) {
-    return { status: 'error', error: 'GITHUB_TOKEN not configured' };
+    return { status: 'error', latencyMs: 0, error: 'GITHUB_TOKEN not configured' };
   }
 
   const start = Date.now();
   try {
     const client = createGitHubClient(token);
-    const result = await testGitHubConnection(client);
-    return {
-      status: 'ok',
-      latencyMs: Date.now() - start,
-      rateLimit: result.rateLimit,
-    };
+    await testGitHubConnection(client);
+    return { status: 'ok', latencyMs: Date.now() - start };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error(
@@ -77,10 +74,6 @@ export async function checkGitHubHealth(token: string | undefined): Promise<GitH
         error: message,
       }),
     );
-    return {
-      status: 'error',
-      latencyMs: Date.now() - start,
-      error: message,
-    };
+    return { status: 'error', latencyMs: Date.now() - start, error: message };
   }
 }
