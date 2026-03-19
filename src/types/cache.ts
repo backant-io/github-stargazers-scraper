@@ -1,5 +1,12 @@
 import type { StargazerListResponse } from './stargazers';
 
+export type CacheStatus = 'HIT' | 'MISS';
+
+export interface CacheHeaderInfo {
+  status: CacheStatus;
+  age?: number;
+}
+
 export interface CachedStargazerData {
   data: StargazerListResponse;
   cachedAt: number;

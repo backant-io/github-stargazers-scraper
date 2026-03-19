@@ -48,3 +48,13 @@ export function shouldProactiveRefresh(
 export function getCacheAge(cachedAt: number): number {
   return Math.floor(Date.now() / 1000) - cachedAt;
 }
+
+export function shouldBypassCache(request: Request): boolean {
+  const cacheControl = request.headers.get('Cache-Control');
+  if (!cacheControl) {
+    return false;
+  }
+
+  const directives = cacheControl.toLowerCase().split(',').map((d) => d.trim());
+  return directives.includes('no-cache') || directives.includes('no-store');
+}
