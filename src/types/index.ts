@@ -38,4 +38,5 @@ export interface Env {
   UPSTASH_REDIS_REST_TOKEN?: string;
   API_KEY_SECRET?: string;
   HYPERDRIVE?: Hyperdrive;
+  LOG_LEVEL?: string;
 }
