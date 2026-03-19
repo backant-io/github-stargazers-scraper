@@ -2,5 +2,11 @@ name = "github-stargazers-scraper"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
+# Hyperdrive configuration for connection pooling
+# Uncomment and configure when Hyperdrive is set up:
+# [[hyperdrive]]
+# binding = "HYPERDRIVE"
+# id = "<your-hyperdrive-config-id>"
+
 [env.production]
 # Production-specific bindings will be added later
