@@ -5,8 +5,10 @@ import { handleCreateKey, handleKeyRotation, handleKeyRevocation } from './handl
 import { authenticateRequest } from './middleware/auth';
 import { applyRateLimit } from './middleware/ratelimit';
 import { createUnauthorizedResponse, createRateLimitedResponse } from './types/errors';
+import { withRateLimitHeaders } from './utils/headers';
 import { createRedisClient } from './services/redis';
 import { Env } from './types';
+import type { RateLimitInfo } from './types/ratelimit';
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -26,35 +28,40 @@ export default {
         return createUnauthorizedResponse();
       }
 
+      let rateLimitInfo: RateLimitInfo | undefined;
       const redis = createRedisClient(env);
       if (redis) {
         const rateLimitResult = await applyRateLimit(redis, authResult.context);
+        rateLimitInfo = rateLimitResult.info;
         if (!rateLimitResult.allowed) {
-          return createRateLimitedResponse(rateLimitResult.retryAfter!);
+          return createRateLimitedResponse(rateLimitResult.retryAfter!, rateLimitResult.info);
         }
       }
 
+      let response: Response;
+
       if (url.pathname === '/api/v1/stargazers' && request.method === 'GET') {
-        return handleStargazers(request, env, authResult.context);
+        response = await handleStargazers(request, env, authResult.context);
+      } else if (url.pathname === '/api/v1/keys' && request.method === 'POST') {
+        response = await handleCreateKey(request, env, authResult.context);
+      } else if (url.pathname === '/api/v1/keys/rotate' && request.method === 'POST') {
+        response = await handleKeyRotation(request, env, authResult.context);
+      } else {
+        const keyRevokeMatch = url.pathname.match(/^\/api\/v1\/keys\/([a-f0-9-]+)$/);
+        if (keyRevokeMatch && request.method === 'DELETE') {
+          response = await handleKeyRevocation(request, env, authResult.context, keyRevokeMatch[1]);
+        } else {
+          response = new Response(JSON.stringify({ error: 'Not Found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
       }
 
-      if (url.pathname === '/api/v1/keys' && request.method === 'POST') {
-        return handleCreateKey(request, env, authResult.context);
+      if (rateLimitInfo) {
+        return withRateLimitHeaders(response, rateLimitInfo);
       }
-
-      if (url.pathname === '/api/v1/keys/rotate' && request.method === 'POST') {
-        return handleKeyRotation(request, env, authResult.context);
-      }
-
-      const keyRevokeMatch = url.pathname.match(/^\/api\/v1\/keys\/([a-f0-9-]+)$/);
-      if (keyRevokeMatch && request.method === 'DELETE') {
-        return handleKeyRevocation(request, env, authResult.context, keyRevokeMatch[1]);
-      }
-
-      return new Response(JSON.stringify({ error: 'Not Found' }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return response;
     }
 
     return new Response(JSON.stringify({ error: 'Not Found' }), {
