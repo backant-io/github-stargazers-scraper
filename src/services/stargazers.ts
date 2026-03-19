@@ -3,6 +3,7 @@ import { createGitHubClient } from './github';
 import { GitHubStargazersResponse, StargazerListResponse } from '../types/stargazers';
 import { normalizeProfile } from './profiles';
 import { processInBatches } from './batchProcessor';
+import { calculatePaginationMeta, PAGINATION } from '../utils/pagination';
 
 const STARGAZERS_QUERY = `
   query GetStargazers($owner: String!, $repo: String!, $first: Int!, $after: String) {
@@ -34,7 +35,6 @@ const STARGAZERS_QUERY = `
 
 const MAX_PER_PAGE = 100;
 const GRAPHQL_CURSOR_LIMIT = 1000;
-const MAX_STARGAZERS = 50_000;
 
 export class StargazerError extends Error {
   constructor(
@@ -60,7 +60,7 @@ function pageToGraphQLParams(
 
 function needsBatchProcessing(page: number, perPage: number, totalStargazers: number): boolean {
   const startIndex = (page - 1) * perPage;
-  return startIndex >= GRAPHQL_CURSOR_LIMIT || totalStargazers > MAX_STARGAZERS;
+  return startIndex >= GRAPHQL_CURSOR_LIMIT || totalStargazers > PAGINATION.MAX_STARGAZERS;
 }
 
 export async function getStargazers(
@@ -97,6 +97,25 @@ export async function getStargazers(
   }
 
   const totalStargazers = initialData.repository.stargazerCount;
+  const meta = calculatePaginationMeta(totalStargazers, page, clampedPerPage);
+  const truncated = totalStargazers > PAGINATION.MAX_STARGAZERS;
+
+  // Handle out-of-bounds page: return empty data with correct metadata
+  if (meta.total_pages > 0 && page > meta.total_pages) {
+    const response: StargazerListResponse = {
+      repository: `${owner}/${repo}`,
+      ...meta,
+      data: [],
+    };
+    if (truncated) {
+      response.truncated = true;
+      response.truncation_reason = 'maximum_stargazers_exceeded';
+      response.warnings = [
+        'Repository has more than 50,000 stargazers. Results truncated to first 50,000.',
+      ];
+    }
+    return response;
+  }
 
   if (needsBatchProcessing(page, clampedPerPage, totalStargazers)) {
     const result = await processInBatches(
@@ -109,15 +128,11 @@ export async function getStargazers(
       startTime,
     );
 
-    const effectiveTotal = Math.min(result.totalStargazers, MAX_STARGAZERS);
-    const totalPages = Math.max(1, Math.ceil(effectiveTotal / clampedPerPage));
+    const batchMeta = calculatePaginationMeta(result.totalStargazers, page, clampedPerPage);
 
     const response: StargazerListResponse = {
       repository: `${owner}/${repo}`,
-      total_stargazers: effectiveTotal,
-      page,
-      per_page: clampedPerPage,
-      total_pages: totalPages,
+      ...batchMeta,
       data: result.stargazers,
     };
 
@@ -165,21 +180,17 @@ export async function getStargazers(
     throw new StargazerError('REPO_NOT_FOUND', `Repository "${owner}/${repo}" not found`);
   }
 
-  const effectiveTotal = Math.min(data.repository.stargazerCount, MAX_STARGAZERS);
-  const totalPages = Math.max(1, Math.ceil(effectiveTotal / clampedPerPage));
   const stargazers = data.repository.stargazers.edges.map((edge) => normalizeProfile(edge));
-  const truncated = data.repository.stargazerCount > MAX_STARGAZERS;
+  const fetchMeta = calculatePaginationMeta(data.repository.stargazerCount, page, clampedPerPage);
+  const fetchTruncated = data.repository.stargazerCount > PAGINATION.MAX_STARGAZERS;
 
   const response: StargazerListResponse = {
     repository: `${owner}/${repo}`,
-    total_stargazers: effectiveTotal,
-    page,
-    per_page: clampedPerPage,
-    total_pages: totalPages,
+    ...fetchMeta,
     data: stargazers,
   };
 
-  if (truncated) {
+  if (fetchTruncated) {
     response.truncated = true;
     response.truncation_reason = 'maximum_stargazers_exceeded';
     response.warnings = [
