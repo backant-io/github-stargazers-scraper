@@ -13,11 +13,13 @@ import type { StargazerListResponse } from '../types/stargazers';
 import { createRedisClient } from '../services/redis';
 import { checkGitHubRateLimit } from '../services/github-ratelimit';
 import { getStargazersFromCache, cacheStargazers } from '../services/cache';
+import { triggerBackgroundRefresh } from '../services/cache-refresh';
 
 export async function handleStargazers(
   request: Request,
   env: Env,
   _authContext: AuthContext,
+  ctx: ExecutionContext,
 ): Promise<Response> {
   const startTime = Date.now();
   const url = new URL(request.url);
@@ -69,6 +71,21 @@ export async function handleStargazers(
         headers.set('X-Cache', 'HIT');
         if (cacheResult.age !== undefined) {
           headers.set('X-Cache-Age', String(cacheResult.age));
+        }
+        if (cacheResult.isStale) {
+          headers.set('X-Cache-Stale', 'true');
+        }
+
+        if (cacheResult.shouldRefresh && redis) {
+          triggerBackgroundRefresh(
+            redis,
+            owner,
+            repoName,
+            pagination.page,
+            pagination.perPage,
+            env,
+            ctx,
+          );
         }
 
         if (pagination.wasPerPageCapped) {
