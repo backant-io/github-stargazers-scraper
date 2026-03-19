@@ -5,6 +5,7 @@ import { RateLimitError } from '../utils/rateLimit';
 import { parsePaginationParams } from '../utils/pagination';
 import { parseFormatParam, InvalidFormatError } from '../utils/format';
 import { buildJsonResponse } from '../utils/response';
+import { buildCsvResponse } from '../utils/csv';
 import { formatIsoDate } from '../utils/date';
 import { Env } from '../types';
 import type { StargazerListResponse } from '../types/stargazers';
@@ -93,11 +94,7 @@ export async function handleStargazers(request: Request, env: Env): Promise<Resp
       case 'json':
         return buildJsonResponse(responseData, headers);
       case 'csv':
-        return createErrorResponse(
-          'FORMAT_NOT_IMPLEMENTED',
-          'CSV format will be available soon',
-          501,
-        );
+        return buildCsvResponse(result.data, owner, repoName, headers);
       default:
         return createErrorResponse('INVALID_FORMAT', 'Unknown format', 400);
     }
