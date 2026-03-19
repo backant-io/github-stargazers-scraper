@@ -11,7 +11,7 @@ import { Env } from './types';
 import type { RateLimitInfo } from './types/ratelimit';
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === '/health' && request.method === 'GET') {
@@ -41,7 +41,7 @@ export default {
       let response: Response;
 
       if (url.pathname === '/api/v1/stargazers' && request.method === 'GET') {
-        response = await handleStargazers(request, env, authResult.context);
+        response = await handleStargazers(request, env, authResult.context, ctx);
       } else if (url.pathname === '/api/v1/keys' && request.method === 'POST') {
         response = await handleCreateKey(request, env, authResult.context);
       } else if (url.pathname === '/api/v1/keys/rotate' && request.method === 'POST') {
