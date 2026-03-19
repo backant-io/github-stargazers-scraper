@@ -11,15 +11,26 @@
     "lint": "eslint 'src/**/*.ts'",
     "lint:fix": "eslint 'src/**/*.ts' --fix",
     "format": "prettier --write 'src/**/*.ts'",
-    "format:check": "prettier --check 'src/**/*.ts'"
+    "format:check": "prettier --check 'src/**/*.ts'",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241230.0",
+    "@types/pg": "^8.18.0",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^8.57.1",
     "prettier": "^3.4.2",
     "typescript": "^5.7.2",
     "wrangler": "^3.99.0"
+  },
+  "dependencies": {
+    "@octokit/graphql": "^9.0.3",
+    "@upstash/redis": "^1.37.0",
+    "drizzle-orm": "^0.45.1",
+    "pg": "^8.20.0"
   }
 }
