@@ -67,6 +67,40 @@ describe('getStargazersFromCache', () => {
     expect(result.data).toEqual(mockStargazerResponse);
     expect(result.cachedAt).toBe(1710000000);
     expect(result.age).toBe(60);
+    expect(result.isStale).toBe(false);
+    expect(result.shouldRefresh).toBe(false);
+  });
+
+  it('returns isStale=true when data is older than TTL', async () => {
+    const cachedAt = 1710000060 - 86400; // exactly TTL seconds before mocked now
+    const cached: CachedStargazerData = {
+      data: mockStargazerResponse,
+      cachedAt,
+      version: CACHE_CONFIG.schemaVersion,
+    };
+
+    const redis = createMockRedis({ get: vi.fn().mockResolvedValue(cached) });
+    const result = await getStargazersFromCache(redis, 'facebook', 'react', 1, 100);
+
+    expect(result.hit).toBe(true);
+    expect(result.isStale).toBe(true);
+    expect(result.shouldRefresh).toBe(true);
+  });
+
+  it('returns shouldRefresh=true when data approaches stale threshold', async () => {
+    const cachedAt = 1710000060 - 82800; // exactly stale threshold
+    const cached: CachedStargazerData = {
+      data: mockStargazerResponse,
+      cachedAt,
+      version: CACHE_CONFIG.schemaVersion,
+    };
+
+    const redis = createMockRedis({ get: vi.fn().mockResolvedValue(cached) });
+    const result = await getStargazersFromCache(redis, 'facebook', 'react', 1, 100);
+
+    expect(result.hit).toBe(true);
+    expect(result.isStale).toBe(false);
+    expect(result.shouldRefresh).toBe(true);
   });
 
   it('returns cache miss for schema version mismatch', async () => {
