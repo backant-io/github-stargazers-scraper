@@ -1,7 +1,7 @@
 import { handleHealth } from './handlers/health';
 import { handleStargazers } from './handlers/stargazers';
 import { handleSignup } from './handlers/signup';
-import { handleCreateKey } from './handlers/keys';
+import { handleCreateKey, handleKeyRotation, handleKeyRevocation } from './handlers/keys';
 import { authenticateRequest } from './middleware/auth';
 import { createUnauthorizedResponse } from './types/errors';
 import { Env } from './types';
@@ -30,6 +30,15 @@ export default {
 
       if (url.pathname === '/api/v1/keys' && request.method === 'POST') {
         return handleCreateKey(request, env, authResult.context);
+      }
+
+      if (url.pathname === '/api/v1/keys/rotate' && request.method === 'POST') {
+        return handleKeyRotation(request, env, authResult.context);
+      }
+
+      const keyRevokeMatch = url.pathname.match(/^\/api\/v1\/keys\/([a-f0-9-]+)$/);
+      if (keyRevokeMatch && request.method === 'DELETE') {
+        return handleKeyRevocation(request, env, authResult.context, keyRevokeMatch[1]);
       }
 
       return new Response(JSON.stringify({ error: 'Not Found' }), {

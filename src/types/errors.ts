@@ -8,6 +8,9 @@ export type ErrorCode =
   | 'UNAUTHORIZED'
   | 'INVALID_REQUEST'
   | 'DUPLICATE_EMAIL'
+  | 'KEY_NOT_FOUND'
+  | 'FORBIDDEN'
+  | 'ALREADY_REVOKED'
   | 'INTERNAL_ERROR';
 
 export class ValidationError extends Error {
