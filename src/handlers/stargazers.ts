@@ -2,11 +2,8 @@ import { validateRepoIdentifier } from '../utils/validation';
 import { createErrorResponse } from '../types/errors';
 import { getStargazers, StargazerError } from '../services/stargazers';
 import { RateLimitError } from '../utils/rateLimit';
+import { parsePaginationParams } from '../utils/pagination';
 import { Env } from '../types';
-
-const DEFAULT_PAGE = 1;
-const DEFAULT_PER_PAGE = 30;
-const MAX_PER_PAGE = 100;
 
 export async function handleStargazers(request: Request, env: Env): Promise<Response> {
   const startTime = Date.now();
@@ -21,11 +18,7 @@ export async function handleStargazers(request: Request, env: Env): Promise<Resp
   const trimmed = repo!.trim();
   const [owner, repoName] = trimmed.split('/');
 
-  const page = parsePositiveInt(url.searchParams.get('page'), DEFAULT_PAGE);
-  const perPage = Math.min(
-    parsePositiveInt(url.searchParams.get('per_page'), DEFAULT_PER_PAGE),
-    MAX_PER_PAGE,
-  );
+  const pagination = parsePaginationParams(url);
 
   if (!env.GITHUB_TOKEN) {
     return new Response(
@@ -35,11 +28,31 @@ export async function handleStargazers(request: Request, env: Env): Promise<Resp
   }
 
   try {
-    const result = await getStargazers(env.GITHUB_TOKEN, owner, repoName, page, perPage, startTime);
+    const result = await getStargazers(
+      env.GITHUB_TOKEN,
+      owner,
+      repoName,
+      pagination.page,
+      pagination.perPage,
+      startTime,
+    );
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
+
+    if (pagination.wasPerPageCapped) {
+      headers['X-Per-Page-Capped'] = 'true';
+      headers['X-Per-Page-Requested'] = String(pagination.originalPerPage);
+      console.log(
+        JSON.stringify({
+          level: 'warn',
+          message: 'per_page capped to maximum',
+          requested: pagination.originalPerPage,
+          capped_to: pagination.perPage,
+        }),
+      );
+    }
 
     if (result.incomplete) {
       headers['X-Partial-Response'] = 'true';
@@ -76,10 +89,4 @@ export async function handleStargazers(request: Request, env: Env): Promise<Resp
       { status: 500, headers: { 'Content-Type': 'application/json' } },
     );
   }
-}
-
-function parsePositiveInt(value: string | null, defaultValue: number): number {
-  if (!value) return defaultValue;
-  const parsed = parseInt(value, 10);
-  return Number.isNaN(parsed) || parsed < 1 ? defaultValue : parsed;
 }

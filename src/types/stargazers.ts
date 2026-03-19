@@ -12,15 +12,14 @@ export interface StargazerProfile {
   starred_at: string;
 }
 
-export interface PaginationMeta {
+export type { PaginationMeta, PaginationParams } from '../utils/pagination';
+
+export interface StargazerListResponse {
+  repository: string;
   page: number;
   per_page: number;
   total_pages: number;
   total_stargazers: number;
-}
-
-export interface StargazerListResponse extends PaginationMeta {
-  repository: string;
   data: StargazerProfile[];
   truncated?: boolean;
   truncation_reason?: 'maximum_stargazers_exceeded';
