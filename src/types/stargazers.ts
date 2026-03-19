@@ -22,6 +22,15 @@ export interface PaginationMeta {
 export interface StargazerListResponse extends PaginationMeta {
   repository: string;
   data: StargazerProfile[];
+  truncated?: boolean;
+  truncation_reason?: 'maximum_stargazers_exceeded';
+  warnings?: string[];
+  incomplete?: boolean;
+  resume_cursor?: string;
+  rate_limit?: {
+    remaining: number;
+    reset_at: string;
+  };
 }
 
 export interface GitHubStargazerNode {
@@ -39,6 +48,14 @@ export interface GitHubStargazerNode {
 export interface GitHubStargazerEdge {
   starredAt: string;
   node: GitHubStargazerNode | null;
+}
+
+export interface GitHubRESTStargazer {
+  user: {
+    login: string;
+    avatar_url: string;
+  };
+  starred_at: string;
 }
 
 export interface GitHubStargazersResponse {
