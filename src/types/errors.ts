@@ -84,6 +84,26 @@ export function createRateLimitedResponse(retryAfter: number, info: RateLimitInf
   });
 }
 
+export function createGitHubRateLimitResponse(retryAfter: number, resetAt: string): Response {
+  const body = {
+    error: {
+      code: 'GITHUB_RATE_LIMIT' as ErrorCode,
+      message: 'GitHub API rate limit exhausted. Please retry after the specified time.',
+      retry_after: retryAfter,
+      reset_at: resetAt,
+      documentation_url: DOCUMENTATION_BASE_URL,
+    },
+  };
+
+  return new Response(JSON.stringify(body), {
+    status: 429,
+    headers: {
+      'Content-Type': 'application/json',
+      'Retry-After': retryAfter.toString(),
+    },
+  });
+}
+
 export function createUnauthorizedResponse(): Response {
   const body: ErrorResponse = {
     error: {

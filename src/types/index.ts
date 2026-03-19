@@ -3,6 +3,7 @@ export {
   createErrorResponse,
   createUnauthorizedResponse,
   createRateLimitedResponse,
+  createGitHubRateLimitResponse,
   ValidationError,
   DuplicateError,
 } from './errors';
@@ -19,6 +20,13 @@ export interface HealthResponse {
       latencyMs?: number;
       rateLimit?: { remaining: number; resetAt: string };
       error?: string;
+    };
+    github_rate_limit?: {
+      status: 'ok' | 'approaching' | 'exhausted';
+      remaining?: number;
+      limit?: number;
+      resetAt?: string;
+      resetInSeconds?: number;
     };
   };
 }

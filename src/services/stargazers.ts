@@ -1,9 +1,11 @@
+import { Redis } from '@upstash/redis/cloudflare';
 import { withRetry } from '../utils/retry';
 import { createGitHubClient } from './github';
 import { GitHubStargazersResponse, StargazerListResponse } from '../types/stargazers';
 import { normalizeProfile } from './profiles';
 import { processInBatches } from './batchProcessor';
 import { calculatePaginationMeta, PAGINATION } from '../utils/pagination';
+import { updateGitHubRateLimit } from './github-ratelimit';
 
 const STARGAZERS_QUERY = `
   query GetStargazers($owner: String!, $repo: String!, $first: Int!, $after: String) {
@@ -29,6 +31,12 @@ const STARGAZERS_QUERY = `
           }
         }
       }
+    }
+    rateLimit {
+      limit
+      remaining
+      resetAt
+      cost
     }
   }
 `;
@@ -63,6 +71,29 @@ function needsBatchProcessing(page: number, perPage: number, totalStargazers: nu
   return startIndex >= GRAPHQL_CURSOR_LIMIT || totalStargazers > PAGINATION.MAX_STARGAZERS;
 }
 
+async function trackRateLimit(
+  redis: Redis | null,
+  response: GitHubStargazersResponse,
+): Promise<void> {
+  if (!redis || !response.rateLimit) return;
+  try {
+    await updateGitHubRateLimit(redis, {
+      remaining: response.rateLimit.remaining,
+      limit: response.rateLimit.limit,
+      resetAt: response.rateLimit.resetAt,
+      lastUpdated: Date.now(),
+    });
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        message: 'Failed to update GitHub rate limit state',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }),
+    );
+  }
+}
+
 export async function getStargazers(
   token: string,
   owner: string,
@@ -70,6 +101,7 @@ export async function getStargazers(
   page: number,
   perPage: number,
   startTime: number = Date.now(),
+  redis: Redis | null = null,
 ): Promise<StargazerListResponse> {
   const clampedPerPage = Math.min(Math.max(1, perPage), MAX_PER_PAGE);
   const client = createGitHubClient(token);
@@ -91,6 +123,8 @@ export async function getStargazers(
     }
     throw error;
   }
+
+  await trackRateLimit(redis, initialData);
 
   if (!initialData.repository) {
     throw new StargazerError('REPO_NOT_FOUND', `Repository "${owner}/${repo}" not found`);
@@ -176,6 +210,8 @@ export async function getStargazers(
     }
     throw error;
   }
+
+  await trackRateLimit(redis, data);
 
   if (!data.repository) {
     throw new StargazerError('REPO_NOT_FOUND', `Repository "${owner}/${repo}" not found`);

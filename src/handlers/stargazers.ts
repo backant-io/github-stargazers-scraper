@@ -1,5 +1,5 @@
 import { validateRepoIdentifier } from '../utils/validation';
-import { createErrorResponse } from '../types/errors';
+import { createErrorResponse, createGitHubRateLimitResponse } from '../types/errors';
 import { getStargazers, StargazerError } from '../services/stargazers';
 import { RateLimitError } from '../utils/rateLimit';
 import { parsePaginationParams } from '../utils/pagination';
@@ -10,6 +10,8 @@ import { formatIsoDate } from '../utils/date';
 import { Env } from '../types';
 import type { AuthContext } from '../types/auth';
 import type { StargazerListResponse } from '../types/stargazers';
+import { createRedisClient } from '../services/redis';
+import { checkGitHubRateLimit } from '../services/github-ratelimit';
 
 export async function handleStargazers(
   request: Request,
@@ -48,6 +50,62 @@ export async function handleStargazers(
     );
   }
 
+  const redis = createRedisClient(env);
+
+  // Check GitHub rate limit before making API calls
+  if (redis) {
+    try {
+      const cacheKey = `stargazers:${owner}:${repoName}`;
+      const cachedData = await redis.get<string>(cacheKey);
+      const hasCachedData = cachedData !== null;
+
+      const githubRateCheck = await checkGitHubRateLimit(redis, hasCachedData);
+
+      if (githubRateCheck.warning) {
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            message: githubRateCheck.warning,
+          }),
+        );
+      }
+
+      switch (githubRateCheck.action) {
+        case 'reject':
+          return createGitHubRateLimitResponse(
+            githubRateCheck.retryAfter!,
+            githubRateCheck.state!.resetAt,
+          );
+
+        case 'use_cache':
+          return new Response(
+            typeof cachedData === 'string' ? cachedData : JSON.stringify(cachedData),
+            {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Cache': 'HIT',
+                'X-Cache-Reason': 'github-rate-limit',
+                'X-RateLimit-Reset': githubRateCheck.state!.resetAt,
+              },
+            },
+          );
+
+        case 'proceed':
+        case 'queue':
+          break;
+      }
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          message: 'Failed to check GitHub rate limit state, proceeding',
+          error: error instanceof Error ? error.message : 'Unknown error',
+        }),
+      );
+    }
+  }
+
   try {
     const result = await getStargazers(
       env.GITHUB_TOKEN,
@@ -56,6 +114,7 @@ export async function handleStargazers(
       pagination.page,
       pagination.perPage,
       startTime,
+      redis,
     );
 
     const headers = new Headers();
@@ -94,6 +153,20 @@ export async function handleStargazers(
           }
         : null,
     };
+
+    // Cache the response for rate limit fallback
+    if (redis) {
+      const cacheKey = `stargazers:${owner}:${repoName}`;
+      redis.set(cacheKey, JSON.stringify(responseData), { ex: 86400 }).catch((err) => {
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            message: 'Failed to cache stargazer data',
+            error: err instanceof Error ? err.message : 'Unknown error',
+          }),
+        );
+      });
+    }
 
     switch (formatParams.format) {
       case 'json':
