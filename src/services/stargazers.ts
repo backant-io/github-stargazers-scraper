@@ -106,6 +106,7 @@ export async function getStargazers(
       repository: `${owner}/${repo}`,
       ...meta,
       data: [],
+      rate_limit: null,
     };
     if (truncated) {
       response.truncated = true;
@@ -134,6 +135,12 @@ export async function getStargazers(
       repository: `${owner}/${repo}`,
       ...batchMeta,
       data: result.stargazers,
+      rate_limit: result.rateLimitStatus
+        ? {
+            remaining: result.rateLimitStatus.remaining,
+            reset_at: result.rateLimitStatus.resetAt.toISOString(),
+          }
+        : null,
     };
 
     if (result.truncated) {
@@ -146,12 +153,6 @@ export async function getStargazers(
     if (result.incomplete) {
       response.incomplete = true;
       response.resume_cursor = result.resumeCursor ?? undefined;
-    }
-    if (result.rateLimitStatus) {
-      response.rate_limit = {
-        remaining: result.rateLimitStatus.remaining,
-        reset_at: result.rateLimitStatus.resetAt.toISOString(),
-      };
     }
 
     return response;
@@ -188,6 +189,7 @@ export async function getStargazers(
     repository: `${owner}/${repo}`,
     ...fetchMeta,
     data: stargazers,
+    rate_limit: null,
   };
 
   if (fetchTruncated) {
