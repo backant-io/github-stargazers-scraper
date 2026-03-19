@@ -57,6 +57,13 @@ export interface GitHubRESTStargazer {
   starred_at: string;
 }
 
+export interface GitHubRateLimitResponse {
+  limit: number;
+  remaining: number;
+  resetAt: string;
+  cost: number;
+}
+
 export interface GitHubStargazersResponse {
   repository: {
     stargazerCount: number;
@@ -68,4 +75,5 @@ export interface GitHubStargazersResponse {
       edges: GitHubStargazerEdge[];
     };
   } | null;
+  rateLimit?: GitHubRateLimitResponse;
 }
