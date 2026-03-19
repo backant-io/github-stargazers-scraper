@@ -11,7 +11,7 @@ export default {
     }
 
     if (url.pathname === '/api/v1/stargazers' && request.method === 'GET') {
-      return handleStargazers(request);
+      return handleStargazers(request, env);
     }
 
     return new Response(JSON.stringify({ error: 'Not Found' }), {
