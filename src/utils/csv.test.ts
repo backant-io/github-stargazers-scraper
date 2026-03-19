@@ -189,11 +189,7 @@ describe('buildCsvResponse', () => {
   });
 
   it('body parses as valid CSV with correct column count', async () => {
-    const response = buildCsvResponse(
-      [makeProfile(), makeProfile({ username: 'jane' })],
-      'o',
-      'r',
-    );
+    const response = buildCsvResponse([makeProfile(), makeProfile({ username: 'jane' })], 'o', 'r');
     const text = await response.text();
     const content = text.slice(1); // Remove BOM
     const lines = content.split('\r\n').filter(Boolean);

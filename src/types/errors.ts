@@ -4,7 +4,8 @@ export type ErrorCode =
   | 'PRIVATE_REPO'
   | 'GITHUB_RATE_LIMIT'
   | 'INVALID_FORMAT'
-  | 'FORMAT_NOT_IMPLEMENTED';
+  | 'FORMAT_NOT_IMPLEMENTED'
+  | 'UNAUTHORIZED';
 
 export interface ErrorResponse {
   error: {
@@ -32,5 +33,23 @@ export function createErrorResponse(
   return new Response(JSON.stringify(body), {
     status: statusCode,
     headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+export function createUnauthorizedResponse(): Response {
+  const body: ErrorResponse = {
+    error: {
+      code: 'UNAUTHORIZED',
+      message: 'Missing or invalid API key',
+      documentation_url: DOCUMENTATION_BASE_URL,
+    },
+  };
+
+  return new Response(JSON.stringify(body), {
+    status: 401,
+    headers: {
+      'Content-Type': 'application/json',
+      'WWW-Authenticate': 'Bearer',
+    },
   });
 }
