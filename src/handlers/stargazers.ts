@@ -3,11 +3,26 @@ import { createErrorResponse } from '../types/errors';
 import { getStargazers, StargazerError } from '../services/stargazers';
 import { RateLimitError } from '../utils/rateLimit';
 import { parsePaginationParams } from '../utils/pagination';
+import { parseFormatParam, InvalidFormatError } from '../utils/format';
+import { buildJsonResponse } from '../utils/response';
+import { formatIsoDate } from '../utils/date';
 import { Env } from '../types';
+import type { StargazerListResponse } from '../types/stargazers';
 
 export async function handleStargazers(request: Request, env: Env): Promise<Response> {
   const startTime = Date.now();
   const url = new URL(request.url);
+
+  let formatParams;
+  try {
+    formatParams = parseFormatParam(url);
+  } catch (error) {
+    if (error instanceof InvalidFormatError) {
+      return createErrorResponse('INVALID_FORMAT', error.message, 400);
+    }
+    throw error;
+  }
+
   const repo = url.searchParams.get('repo');
 
   const validation = validateRepoIdentifier(repo);
@@ -37,13 +52,11 @@ export async function handleStargazers(request: Request, env: Env): Promise<Resp
       startTime,
     );
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
+    const headers = new Headers();
 
     if (pagination.wasPerPageCapped) {
-      headers['X-Per-Page-Capped'] = 'true';
-      headers['X-Per-Page-Requested'] = String(pagination.originalPerPage);
+      headers.set('X-Per-Page-Capped', 'true');
+      headers.set('X-Per-Page-Requested', String(pagination.originalPerPage));
       console.log(
         JSON.stringify({
           level: 'warn',
@@ -55,20 +68,39 @@ export async function handleStargazers(request: Request, env: Env): Promise<Resp
     }
 
     if (result.incomplete) {
-      headers['X-Partial-Response'] = 'true';
+      headers.set('X-Partial-Response', 'true');
     }
     if (result.resume_cursor) {
-      headers['X-Next-Cursor'] = result.resume_cursor;
+      headers.set('X-Next-Cursor', result.resume_cursor);
     }
     if (result.rate_limit) {
-      headers['X-RateLimit-Remaining'] = String(result.rate_limit.remaining);
-      headers['X-RateLimit-Reset'] = result.rate_limit.reset_at;
+      headers.set('X-RateLimit-Remaining', String(result.rate_limit.remaining));
+      headers.set('X-RateLimit-Reset', result.rate_limit.reset_at);
     }
 
-    return new Response(JSON.stringify(result), {
-      status: 200,
-      headers,
-    });
+    // Ensure rate_limit.reset_at is ISO 8601 formatted
+    const responseData: StargazerListResponse = {
+      ...result,
+      rate_limit: result.rate_limit
+        ? {
+            remaining: result.rate_limit.remaining,
+            reset_at: formatIsoDate(result.rate_limit.reset_at),
+          }
+        : null,
+    };
+
+    switch (formatParams.format) {
+      case 'json':
+        return buildJsonResponse(responseData, headers);
+      case 'csv':
+        return createErrorResponse(
+          'FORMAT_NOT_IMPLEMENTED',
+          'CSV format will be available soon',
+          501,
+        );
+      default:
+        return createErrorResponse('INVALID_FORMAT', 'Unknown format', 400);
+    }
   } catch (error) {
     if (error instanceof StargazerError) {
       const statusCode = error.code === 'REPO_NOT_FOUND' ? 404 : 422;

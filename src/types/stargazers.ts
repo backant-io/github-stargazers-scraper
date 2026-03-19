@@ -26,10 +26,10 @@ export interface StargazerListResponse {
   warnings?: string[];
   incomplete?: boolean;
   resume_cursor?: string;
-  rate_limit?: {
+  rate_limit: {
     remaining: number;
     reset_at: string;
-  };
+  } | null;
 }
 
 export interface GitHubStargazerNode {
