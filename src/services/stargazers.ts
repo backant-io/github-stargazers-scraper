@@ -1,6 +1,7 @@
 import { withRetry } from '../utils/retry';
 import { createGitHubClient } from './github';
 import { GitHubStargazersResponse, StargazerListResponse } from '../types/stargazers';
+import { normalizeProfile } from './profiles';
 
 const STARGAZERS_QUERY = `
   query GetStargazers($owner: String!, $repo: String!, $first: Int!, $after: String) {
@@ -15,6 +16,14 @@ const STARGAZERS_QUERY = `
           starredAt
           node {
             login
+            name
+            email
+            company
+            location
+            bio
+            websiteUrl
+            twitterUsername
+            avatarUrl
           }
         }
       }
@@ -82,10 +91,7 @@ export async function getStargazers(
   const totalStargazers = Math.min(data.repository.stargazerCount, MAX_RESULTS);
   const totalPages = Math.max(1, Math.ceil(totalStargazers / clampedPerPage));
 
-  const stargazers = data.repository.stargazers.edges.map((edge) => ({
-    username: edge.node.login,
-    starred_at: edge.starredAt,
-  }));
+  const stargazers = data.repository.stargazers.edges.map((edge) => normalizeProfile(edge));
 
   return {
     repository: `${owner}/${repo}`,
