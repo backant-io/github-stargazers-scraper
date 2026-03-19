@@ -1,7 +1,6 @@
 import { createDatabase } from '../db';
 import { createUser } from '../services/users';
-import { createErrorResponse } from '../types/errors';
-import { ValidationError, DuplicateError } from '../types/errors';
+import { Errors, ApiError, ValidationError, DuplicateError } from '../types/errors';
 import type { Env } from '../types';
 import type { SignupResponse } from '../types/users';
 
@@ -17,11 +16,11 @@ export async function handleSignup(request: Request, env: Env): Promise<Response
     const body = (await request.json()) as { email?: unknown };
 
     if (!body.email || typeof body.email !== 'string') {
-      return createErrorResponse('INVALID_REQUEST', 'Email is required', 400);
+      throw Errors.invalidRequest('Email is required');
     }
 
     if (!env.DATABASE_URL) {
-      return createErrorResponse('INTERNAL_ERROR', 'An unexpected error occurred', 500);
+      throw Errors.internal();
     }
 
     const db = createDatabase(env.DATABASE_URL);
@@ -47,16 +46,19 @@ export async function handleSignup(request: Request, env: Env): Promise<Response
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
     if (error instanceof ValidationError) {
-      return createErrorResponse('INVALID_REQUEST', error.message, 400);
+      throw Errors.invalidRequest(error.message);
     }
     if (error instanceof DuplicateError) {
-      return createErrorResponse('DUPLICATE_EMAIL', error.message, 409);
+      throw Errors.duplicateEmail();
     }
     if (error instanceof SyntaxError) {
-      return createErrorResponse('INVALID_REQUEST', 'Invalid JSON body', 400);
+      throw Errors.invalidRequest('Invalid JSON body');
     }
     console.error('Signup error:', error);
-    return createErrorResponse('INTERNAL_ERROR', 'An unexpected error occurred', 500);
+    throw Errors.internal();
   }
 }

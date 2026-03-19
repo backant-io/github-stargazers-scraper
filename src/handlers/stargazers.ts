@@ -1,5 +1,5 @@
 import { validateRepoIdentifier } from '../utils/validation';
-import { createErrorResponse, createGitHubRateLimitResponse } from '../types/errors';
+import { ApiError, Errors } from '../types/errors';
 import { getStargazers, StargazerError } from '../services/stargazers';
 import { RateLimitError } from '../utils/rateLimit';
 import { parsePaginationParams } from '../utils/pagination';
@@ -32,7 +32,7 @@ export async function handleStargazers(
     formatParams = parseFormatParam(url);
   } catch (error) {
     if (error instanceof InvalidFormatError) {
-      return createErrorResponse('INVALID_FORMAT', error.message, 400);
+      throw Errors.invalidFormat(error.message);
     }
     throw error;
   }
@@ -41,7 +41,7 @@ export async function handleStargazers(
 
   const validation = validateRepoIdentifier(repo);
   if (!validation.valid) {
-    return createErrorResponse('INVALID_REPO', validation.error!, 400);
+    throw Errors.invalidRepo(validation.error!);
   }
 
   const trimmed = repo!.trim();
@@ -50,10 +50,7 @@ export async function handleStargazers(
   const pagination = parsePaginationParams(url);
 
   if (!env.GITHUB_TOKEN) {
-    return new Response(
-      JSON.stringify({ error: { code: 'SERVER_ERROR', message: 'GitHub token not configured' } }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } },
-    );
+    throw Errors.internal();
   }
 
   const redis = createRedisClient(env);
@@ -107,10 +104,13 @@ export async function handleStargazers(
           case 'csv':
             return buildCsvResponse(cacheResult.data.data, owner, repoName, headers);
           default:
-            return createErrorResponse('INVALID_FORMAT', 'Unknown format', 400);
+            throw Errors.invalidFormat('Unknown format');
         }
       }
     } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
       console.warn(
         JSON.stringify({
           level: 'warn',
@@ -150,10 +150,7 @@ export async function handleStargazers(
 
       switch (githubRateCheck.action) {
         case 'reject':
-          return createGitHubRateLimitResponse(
-            githubRateCheck.retryAfter!,
-            githubRateCheck.state!.resetAt,
-          );
+          throw Errors.githubRateLimit(githubRateCheck.retryAfter!, githubRateCheck.state!.resetAt);
 
         case 'proceed':
         case 'queue':
@@ -161,6 +158,9 @@ export async function handleStargazers(
           break;
       }
     } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
       console.warn(
         JSON.stringify({
           level: 'warn',
@@ -246,15 +246,23 @@ export async function handleStargazers(
       case 'csv':
         return buildCsvResponse(result.data, owner, repoName, headers);
       default:
-        return createErrorResponse('INVALID_FORMAT', 'Unknown format', 400);
+        throw Errors.invalidFormat('Unknown format');
     }
   } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
     if (error instanceof StargazerError) {
-      const statusCode = error.code === 'REPO_NOT_FOUND' ? 404 : 422;
-      return createErrorResponse(error.code, error.message, statusCode);
+      if (error.code === 'REPO_NOT_FOUND') {
+        throw Errors.repoNotFound(`${owner}/${repoName}`);
+      }
+      throw Errors.privateRepo(`${owner}/${repoName}`);
     }
     if (error instanceof RateLimitError) {
-      return createErrorResponse('GITHUB_RATE_LIMIT', error.message, 429);
+      const retryAfter = Math.ceil(
+        Math.max(0, (error.rateLimitStatus.resetAt.getTime() - Date.now()) / 1000),
+      );
+      throw Errors.githubRateLimit(retryAfter, error.rateLimitStatus.resetAt.toISOString());
     }
     console.error(
       JSON.stringify({
@@ -263,9 +271,6 @@ export async function handleStargazers(
         error: error instanceof Error ? error.message : 'Unknown error',
       }),
     );
-    return new Response(
-      JSON.stringify({ error: { code: 'SERVER_ERROR', message: 'Internal server error' } }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } },
-    );
+    throw Errors.githubUnavailable();
   }
 }

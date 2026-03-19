@@ -4,7 +4,8 @@ import { handleSignup } from './handlers/signup';
 import { handleCreateKey, handleKeyRotation, handleKeyRevocation } from './handlers/keys';
 import { authenticateRequest } from './middleware/auth';
 import { applyRateLimit } from './middleware/ratelimit';
-import { createUnauthorizedResponse, createRateLimitedResponse } from './types/errors';
+import { withErrorHandler } from './middleware/error-handler';
+import { ApiError, ErrorCode, Errors, createRateLimitedResponse } from './types/errors';
 import { withRateLimitHeaders } from './utils/headers';
 import { createRedisClient } from './services/redis';
 import { Env } from './types';
@@ -14,59 +15,54 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
-    if (url.pathname === '/health' && request.method === 'GET') {
-      return handleHealth(env);
-    }
-
-    if (url.pathname === '/api/v1/signup') {
-      return handleSignup(request, env);
-    }
-
-    if (url.pathname.startsWith('/api/v1/')) {
-      const authResult = await authenticateRequest(request, env);
-      if (!authResult.success) {
-        return createUnauthorizedResponse();
+      if (url.pathname === '/health' && req.method === 'GET') {
+        return handleHealth(e);
       }
 
-      let rateLimitInfo: RateLimitInfo | undefined;
-      const redis = createRedisClient(env);
-      if (redis) {
-        const rateLimitResult = await applyRateLimit(redis, authResult.context);
-        rateLimitInfo = rateLimitResult.info;
-        if (!rateLimitResult.allowed) {
-          return createRateLimitedResponse(rateLimitResult.retryAfter!, rateLimitResult.info);
+      if (url.pathname === '/api/v1/signup') {
+        return handleSignup(req, e);
+      }
+
+      if (url.pathname.startsWith('/api/v1/')) {
+        const authResult = await authenticateRequest(req, e);
+        if (!authResult.success) {
+          throw Errors.unauthorized();
         }
-      }
 
-      let response: Response;
+        let rateLimitInfo: RateLimitInfo | undefined;
+        const redis = createRedisClient(e);
+        if (redis) {
+          const rateLimitResult = await applyRateLimit(redis, authResult.context);
+          rateLimitInfo = rateLimitResult.info;
+          if (!rateLimitResult.allowed) {
+            return createRateLimitedResponse(rateLimitResult.retryAfter!, rateLimitResult.info);
+          }
+        }
 
-      if (url.pathname === '/api/v1/stargazers' && request.method === 'GET') {
-        response = await handleStargazers(request, env, authResult.context, ctx);
-      } else if (url.pathname === '/api/v1/keys' && request.method === 'POST') {
-        response = await handleCreateKey(request, env, authResult.context);
-      } else if (url.pathname === '/api/v1/keys/rotate' && request.method === 'POST') {
-        response = await handleKeyRotation(request, env, authResult.context);
-      } else {
-        const keyRevokeMatch = url.pathname.match(/^\/api\/v1\/keys\/([a-f0-9-]+)$/);
-        if (keyRevokeMatch && request.method === 'DELETE') {
-          response = await handleKeyRevocation(request, env, authResult.context, keyRevokeMatch[1]);
+        let response: Response;
+
+        if (url.pathname === '/api/v1/stargazers' && req.method === 'GET') {
+          response = await handleStargazers(req, e, authResult.context);
+        } else if (url.pathname === '/api/v1/keys' && req.method === 'POST') {
+          response = await handleCreateKey(req, e, authResult.context);
+        } else if (url.pathname === '/api/v1/keys/rotate' && req.method === 'POST') {
+          response = await handleKeyRotation(req, e, authResult.context);
         } else {
-          response = new Response(JSON.stringify({ error: 'Not Found' }), {
-            status: 404,
-            headers: { 'Content-Type': 'application/json' },
-          });
+          const keyRevokeMatch = url.pathname.match(/^\/api\/v1\/keys\/([a-f0-9-]+)$/);
+          if (keyRevokeMatch && req.method === 'DELETE') {
+            response = await handleKeyRevocation(req, e, authResult.context, keyRevokeMatch[1]);
+          } else {
+            throw new ApiError(ErrorCode.INVALID_REQUEST, 'Not Found', undefined);
+          }
         }
+
+        if (rateLimitInfo) {
+          return withRateLimitHeaders(response, rateLimitInfo);
+        }
+        return response;
       }
 
-      if (rateLimitInfo) {
-        return withRateLimitHeaders(response, rateLimitInfo);
-      }
-      return response;
-    }
-
-    return new Response(JSON.stringify({ error: 'Not Found' }), {
-      status: 404,
-      headers: { 'Content-Type': 'application/json' },
-    });
+      throw new ApiError(ErrorCode.INVALID_REQUEST, 'Not Found', undefined);
+    })(request, env);
   },
 } satisfies ExportedHandler<Env>;
