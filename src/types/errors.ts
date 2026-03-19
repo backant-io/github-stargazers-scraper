@@ -1,4 +1,4 @@
-export type ErrorCode = 'INVALID_REPO' | 'REPO_NOT_FOUND' | 'PRIVATE_REPO';
+export type ErrorCode = 'INVALID_REPO' | 'REPO_NOT_FOUND' | 'PRIVATE_REPO' | 'GITHUB_RATE_LIMIT';
 
 export interface ErrorResponse {
   error: {

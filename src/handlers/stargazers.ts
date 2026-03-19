@@ -1,6 +1,7 @@
 import { validateRepoIdentifier } from '../utils/validation';
 import { createErrorResponse } from '../types/errors';
 import { getStargazers, StargazerError } from '../services/stargazers';
+import { RateLimitError } from '../utils/rateLimit';
 import { Env } from '../types';
 
 const DEFAULT_PAGE = 1;
@@ -8,6 +9,7 @@ const DEFAULT_PER_PAGE = 30;
 const MAX_PER_PAGE = 100;
 
 export async function handleStargazers(request: Request, env: Env): Promise<Response> {
+  const startTime = Date.now();
   const url = new URL(request.url);
   const repo = url.searchParams.get('repo');
 
@@ -33,15 +35,34 @@ export async function handleStargazers(request: Request, env: Env): Promise<Resp
   }
 
   try {
-    const result = await getStargazers(env.GITHUB_TOKEN, owner, repoName, page, perPage);
+    const result = await getStargazers(env.GITHUB_TOKEN, owner, repoName, page, perPage, startTime);
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (result.incomplete) {
+      headers['X-Partial-Response'] = 'true';
+    }
+    if (result.resume_cursor) {
+      headers['X-Next-Cursor'] = result.resume_cursor;
+    }
+    if (result.rate_limit) {
+      headers['X-RateLimit-Remaining'] = String(result.rate_limit.remaining);
+      headers['X-RateLimit-Reset'] = result.rate_limit.reset_at;
+    }
+
     return new Response(JSON.stringify(result), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers,
     });
   } catch (error) {
     if (error instanceof StargazerError) {
       const statusCode = error.code === 'REPO_NOT_FOUND' ? 404 : 422;
       return createErrorResponse(error.code, error.message, statusCode);
+    }
+    if (error instanceof RateLimitError) {
+      return createErrorResponse('GITHUB_RATE_LIMIT', error.message, 429);
     }
     console.error(
       JSON.stringify({
