@@ -1,3 +1,6 @@
+import type { RateLimitInfo } from './ratelimit';
+import { createRateLimitHeaders, createRateLimitedHeaders } from '../utils/headers';
+
 export type ErrorCode =
   | 'INVALID_REPO'
   | 'REPO_NOT_FOUND'
@@ -42,6 +45,7 @@ export function createErrorResponse(
   code: ErrorCode,
   message: string,
   statusCode: number,
+  rateLimitInfo?: RateLimitInfo,
 ): Response {
   const body: ErrorResponse = {
     error: {
@@ -51,13 +55,15 @@ export function createErrorResponse(
     },
   };
 
+  const rateLimitHeaders = rateLimitInfo ? createRateLimitHeaders(rateLimitInfo) : {};
+
   return new Response(JSON.stringify(body), {
     status: statusCode,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...rateLimitHeaders },
   });
 }
 
-export function createRateLimitedResponse(retryAfter: number): Response {
+export function createRateLimitedResponse(retryAfter: number, info: RateLimitInfo): Response {
   const body = {
     error: {
       code: 'RATE_LIMITED' as ErrorCode,
@@ -67,11 +73,13 @@ export function createRateLimitedResponse(retryAfter: number): Response {
     },
   };
 
+  const headers = createRateLimitedHeaders(info, retryAfter);
+
   return new Response(JSON.stringify(body), {
     status: 403,
     headers: {
       'Content-Type': 'application/json',
-      'Retry-After': retryAfter.toString(),
+      ...headers,
     },
   });
 }
