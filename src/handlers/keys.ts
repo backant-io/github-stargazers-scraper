@@ -1,7 +1,7 @@
 import { createDatabase } from '../db';
 import { createApiKey } from '../services/apiKeys';
 import { rotateApiKey, revokeApiKey } from '../services/key-rotation';
-import { createErrorResponse } from '../types/errors';
+import { ApiError, Errors } from '../types/errors';
 import type { Env } from '../types';
 import type { AuthContext } from '../types/auth';
 import type { CreateKeyResponse } from '../types/apiKeys';
@@ -20,7 +20,7 @@ export async function handleCreateKey(
 
   try {
     if (!env.DATABASE_URL) {
-      return createErrorResponse('INTERNAL_ERROR', 'An unexpected error occurred', 500);
+      throw Errors.internal();
     }
 
     const db = createDatabase(env.DATABASE_URL);
@@ -41,8 +41,11 @@ export async function handleCreateKey(
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
     console.error('Create key error:', error);
-    return createErrorResponse('INTERNAL_ERROR', 'An unexpected error occurred', 500);
+    throw Errors.internal();
   }
 }
 
@@ -53,7 +56,7 @@ export async function handleKeyRotation(
 ): Promise<Response> {
   try {
     if (!env.DATABASE_URL) {
-      return createErrorResponse('INTERNAL_ERROR', 'An unexpected error occurred', 500);
+      throw Errors.internal();
     }
 
     const db = createDatabase(env.DATABASE_URL);
@@ -61,9 +64,9 @@ export async function handleKeyRotation(
 
     if (!result.success) {
       if (result.error === 'NO_EXISTING_KEY') {
-        return createErrorResponse('KEY_NOT_FOUND', 'No active API key found to rotate', 400);
+        throw Errors.keyNotFound();
       }
-      return createErrorResponse('INTERNAL_ERROR', 'An unexpected error occurred', 500);
+      throw Errors.internal();
     }
 
     return new Response(
@@ -80,8 +83,11 @@ export async function handleKeyRotation(
       },
     );
   } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
     console.error('Key rotation error:', error);
-    return createErrorResponse('INTERNAL_ERROR', 'An unexpected error occurred', 500);
+    throw Errors.internal();
   }
 }
 
@@ -93,20 +99,21 @@ export async function handleKeyRevocation(
 ): Promise<Response> {
   try {
     if (!env.DATABASE_URL) {
-      return createErrorResponse('INTERNAL_ERROR', 'An unexpected error occurred', 500);
+      throw Errors.internal();
     }
 
     const db = createDatabase(env.DATABASE_URL);
     const result = await revokeApiKey(db, keyId, authContext.userId);
 
     if (!result.success) {
-      const errorMap = {
-        KEY_NOT_FOUND: { code: 'KEY_NOT_FOUND' as const, message: 'API key not found', status: 404 },
-        NOT_AUTHORIZED: { code: 'FORBIDDEN' as const, message: 'Not authorized to revoke this key', status: 403 },
-        ALREADY_REVOKED: { code: 'ALREADY_REVOKED' as const, message: 'Key is already revoked', status: 400 },
-      };
-      const err = errorMap[result.error];
-      return createErrorResponse(err.code, err.message, err.status);
+      switch (result.error) {
+        case 'KEY_NOT_FOUND':
+          throw Errors.keyNotFound();
+        case 'NOT_AUTHORIZED':
+          throw Errors.forbidden();
+        case 'ALREADY_REVOKED':
+          throw Errors.alreadyRevoked();
+      }
     }
 
     return new Response(
@@ -120,7 +127,10 @@ export async function handleKeyRevocation(
       },
     );
   } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
     console.error('Key revocation error:', error);
-    return createErrorResponse('INTERNAL_ERROR', 'An unexpected error occurred', 500);
+    throw Errors.internal();
   }
 }
