@@ -3,7 +3,9 @@ import { handleStargazers } from './handlers/stargazers';
 import { handleSignup } from './handlers/signup';
 import { handleCreateKey, handleKeyRotation, handleKeyRevocation } from './handlers/keys';
 import { authenticateRequest } from './middleware/auth';
-import { createUnauthorizedResponse } from './types/errors';
+import { applyRateLimit } from './middleware/ratelimit';
+import { createUnauthorizedResponse, createRateLimitedResponse } from './types/errors';
+import { createRedisClient } from './services/redis';
 import { Env } from './types';
 
 export default {
@@ -22,6 +24,14 @@ export default {
       const authResult = await authenticateRequest(request, env);
       if (!authResult.success) {
         return createUnauthorizedResponse();
+      }
+
+      const redis = createRedisClient(env);
+      if (redis) {
+        const rateLimitResult = await applyRateLimit(redis, authResult.context);
+        if (!rateLimitResult.allowed) {
+          return createRateLimitedResponse(rateLimitResult.retryAfter!);
+        }
       }
 
       if (url.pathname === '/api/v1/stargazers' && request.method === 'GET') {

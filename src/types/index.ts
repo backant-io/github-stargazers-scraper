@@ -2,6 +2,7 @@ export type { ErrorCode, ErrorResponse } from './errors';
 export {
   createErrorResponse,
   createUnauthorizedResponse,
+  createRateLimitedResponse,
   ValidationError,
   DuplicateError,
 } from './errors';
