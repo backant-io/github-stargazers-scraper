@@ -6,6 +6,7 @@ import {
   isStale,
   shouldProactiveRefresh,
   getCacheAge,
+  shouldBypassCache,
 } from './cache';
 
 describe('buildStargazerCacheKey', () => {
@@ -142,5 +143,54 @@ describe('getCacheAge', () => {
     vi.spyOn(Date, 'now').mockReturnValue(now * 1000);
     const cachedAt = now - 3600;
     expect(getCacheAge(cachedAt)).toBe(3600);
+  });
+});
+
+describe('shouldBypassCache', () => {
+  it('returns true for no-cache directive', () => {
+    const request = new Request('http://test.com', {
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    expect(shouldBypassCache(request)).toBe(true);
+  });
+
+  it('returns true for no-store directive', () => {
+    const request = new Request('http://test.com', {
+      headers: { 'Cache-Control': 'no-store' },
+    });
+    expect(shouldBypassCache(request)).toBe(true);
+  });
+
+  it('returns true for no-cache among multiple directives', () => {
+    const request = new Request('http://test.com', {
+      headers: { 'Cache-Control': 'max-age=0, no-cache' },
+    });
+    expect(shouldBypassCache(request)).toBe(true);
+  });
+
+  it('returns false for max-age=0', () => {
+    const request = new Request('http://test.com', {
+      headers: { 'Cache-Control': 'max-age=0' },
+    });
+    expect(shouldBypassCache(request)).toBe(false);
+  });
+
+  it('returns false when no Cache-Control header', () => {
+    const request = new Request('http://test.com');
+    expect(shouldBypassCache(request)).toBe(false);
+  });
+
+  it('handles case-insensitive directives', () => {
+    const request = new Request('http://test.com', {
+      headers: { 'Cache-Control': 'No-Cache' },
+    });
+    expect(shouldBypassCache(request)).toBe(true);
+  });
+
+  it('returns false for empty Cache-Control header', () => {
+    const request = new Request('http://test.com', {
+      headers: { 'Cache-Control': '' },
+    });
+    expect(shouldBypassCache(request)).toBe(false);
   });
 });
