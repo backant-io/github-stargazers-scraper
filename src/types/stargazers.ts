@@ -1,5 +1,14 @@
-export interface StargazerBasic {
+export interface StargazerProfile {
   username: string;
+  name: string | null;
+  email: string | null;
+  company: string | null;
+  location: string | null;
+  bio: string | null;
+  blog: string | null;
+  twitter_username: string | null;
+  profile_url: string;
+  avatar_url: string;
   starred_at: string;
 }
 
@@ -12,7 +21,24 @@ export interface PaginationMeta {
 
 export interface StargazerListResponse extends PaginationMeta {
   repository: string;
-  data: StargazerBasic[];
+  data: StargazerProfile[];
+}
+
+export interface GitHubStargazerNode {
+  login: string;
+  name: string | null;
+  email: string | null;
+  company: string | null;
+  location: string | null;
+  bio: string | null;
+  websiteUrl: string | null;
+  twitterUsername: string | null;
+  avatarUrl: string;
+}
+
+export interface GitHubStargazerEdge {
+  starredAt: string;
+  node: GitHubStargazerNode | null;
 }
 
 export interface GitHubStargazersResponse {
@@ -23,12 +49,7 @@ export interface GitHubStargazersResponse {
         hasNextPage: boolean;
         endCursor: string | null;
       };
-      edges: Array<{
-        starredAt: string;
-        node: {
-          login: string;
-        };
-      }>;
+      edges: GitHubStargazerEdge[];
     };
   } | null;
 }
