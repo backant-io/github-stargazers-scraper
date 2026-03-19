@@ -1,5 +1,10 @@
 export type { ErrorCode, ErrorResponse } from './errors';
-export { createErrorResponse, createUnauthorizedResponse } from './errors';
+export {
+  createErrorResponse,
+  createUnauthorizedResponse,
+  ValidationError,
+  DuplicateError,
+} from './errors';
 export type { AuthContext, ApiKeyRecord, AuthResult, PlanType } from './auth';
 
 export interface HealthResponse {

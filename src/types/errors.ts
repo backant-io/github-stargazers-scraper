@@ -5,7 +5,24 @@ export type ErrorCode =
   | 'GITHUB_RATE_LIMIT'
   | 'INVALID_FORMAT'
   | 'FORMAT_NOT_IMPLEMENTED'
-  | 'UNAUTHORIZED';
+  | 'UNAUTHORIZED'
+  | 'INVALID_REQUEST'
+  | 'DUPLICATE_EMAIL'
+  | 'INTERNAL_ERROR';
+
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+export class DuplicateError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DuplicateError';
+  }
+}
 
 export interface ErrorResponse {
   error: {
