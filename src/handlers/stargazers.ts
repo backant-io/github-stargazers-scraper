@@ -8,9 +8,14 @@ import { buildJsonResponse } from '../utils/response';
 import { buildCsvResponse } from '../utils/csv';
 import { formatIsoDate } from '../utils/date';
 import { Env } from '../types';
+import type { AuthContext } from '../types/auth';
 import type { StargazerListResponse } from '../types/stargazers';
 
-export async function handleStargazers(request: Request, env: Env): Promise<Response> {
+export async function handleStargazers(
+  request: Request,
+  env: Env,
+  _authContext: AuthContext,
+): Promise<Response> {
   const startTime = Date.now();
   const url = new URL(request.url);
 

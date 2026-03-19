@@ -1,5 +1,7 @@
 import { handleHealth } from './handlers/health';
 import { handleStargazers } from './handlers/stargazers';
+import { authenticateRequest } from './middleware/auth';
+import { createUnauthorizedResponse } from './types/errors';
 import { Env } from './types';
 
 export default {
@@ -10,8 +12,20 @@ export default {
       return handleHealth(env);
     }
 
-    if (url.pathname === '/api/v1/stargazers' && request.method === 'GET') {
-      return handleStargazers(request, env);
+    if (url.pathname.startsWith('/api/v1/')) {
+      const authResult = await authenticateRequest(request, env);
+      if (!authResult.success) {
+        return createUnauthorizedResponse();
+      }
+
+      if (url.pathname === '/api/v1/stargazers' && request.method === 'GET') {
+        return handleStargazers(request, env, authResult.context);
+      }
+
+      return new Response(JSON.stringify({ error: 'Not Found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     return new Response(JSON.stringify({ error: 'Not Found' }), {
