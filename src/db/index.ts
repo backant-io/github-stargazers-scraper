@@ -1,6 +1,7 @@
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from './schema';
+import type { DependencyCheckResult } from '../types/health';
 
 export type Database = NodePgDatabase<typeof schema>;
 
@@ -16,12 +17,18 @@ export function createDatabase(connectionString: string): Database {
   return drizzle(pool, { schema });
 }
 
-export async function checkDatabaseHealth(db: Database): Promise<boolean> {
+export async function checkDatabaseHealth(db: Database | null): Promise<DependencyCheckResult> {
+  if (!db) {
+    return { status: 'error', latencyMs: 0, error: 'Database not configured' };
+  }
+
+  const start = Date.now();
   try {
     await db.execute('SELECT 1');
-    return true;
-  } catch {
-    return false;
+    return { status: 'ok', latencyMs: Date.now() - start };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Database connection failed';
+    return { status: 'error', latencyMs: Date.now() - start, error: message };
   }
 }
 

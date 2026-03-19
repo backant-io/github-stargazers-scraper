@@ -6,6 +6,7 @@ import { authenticateRequest } from './middleware/auth';
 import { applyRateLimit } from './middleware/ratelimit';
 import { withErrorHandler } from './middleware/error-handler';
 import { withRequestLogging } from './middleware/request-logger';
+import { checkHealthRateLimit, createRateLimitResponse } from './middleware/health-rate-limit';
 import { ApiError, ErrorCode, Errors, createRateLimitedResponse } from './types/errors';
 import { withRateLimitHeaders } from './utils/headers';
 import { createRedisClient } from './services/redis';
@@ -19,6 +20,10 @@ export default {
         const url = new URL(req.url);
 
         if (url.pathname === '/health' && req.method === 'GET') {
+          const rateCheck = checkHealthRateLimit(req);
+          if (!rateCheck.allowed) {
+            return createRateLimitResponse(rateCheck.retryAfter!);
+          }
           return handleHealth(e);
         }
 
