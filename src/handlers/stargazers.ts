@@ -13,11 +13,16 @@ import type { StargazerListResponse } from '../types/stargazers';
 import { createRedisClient } from '../services/redis';
 import { checkGitHubRateLimit } from '../services/github-ratelimit';
 import { getStargazersFromCache, cacheStargazers } from '../services/cache';
+import { triggerBackgroundRefresh } from '../services/cache-refresh';
+import { shouldBypassCache } from '../utils/cache';
+import { createCacheHeaders } from '../utils/headers';
+import type { CacheHeaderInfo } from '../types/cache';
 
 export async function handleStargazers(
   request: Request,
   env: Env,
   _authContext: AuthContext,
+  ctx: ExecutionContext,
 ): Promise<Response> {
   const startTime = Date.now();
   const url = new URL(request.url);
@@ -49,9 +54,10 @@ export async function handleStargazers(
   }
 
   const redis = createRedisClient(env);
+  const bypassCache = shouldBypassCache(request);
 
-  // Check cache first for fast responses
-  if (redis) {
+  // Check cache first for fast responses (unless bypass requested)
+  if (redis && !bypassCache) {
     try {
       const cacheResult = await getStargazersFromCache(
         redis,
@@ -62,10 +68,29 @@ export async function handleStargazers(
       );
 
       if (cacheResult.hit && cacheResult.data) {
+        const cacheInfo: CacheHeaderInfo = {
+          status: 'HIT',
+          age: cacheResult.age,
+        };
+        const cacheHeaders = createCacheHeaders(cacheInfo);
         const headers = new Headers();
-        headers.set('X-Cache', 'HIT');
-        if (cacheResult.age !== undefined) {
-          headers.set('X-Cache-Age', String(cacheResult.age));
+        for (const [key, value] of Object.entries(cacheHeaders)) {
+          headers.set(key, value);
+        }
+        if (cacheResult.isStale) {
+          headers.set('X-Cache-Stale', 'true');
+        }
+
+        if (cacheResult.shouldRefresh && redis) {
+          triggerBackgroundRefresh(
+            redis,
+            owner,
+            repoName,
+            pagination.page,
+            pagination.perPage,
+            env,
+            ctx,
+          );
         }
 
         if (pagination.wasPerPageCapped) {
@@ -94,6 +119,19 @@ export async function handleStargazers(
         }),
       );
     }
+  }
+
+  if (bypassCache) {
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        message: 'Cache bypass requested via Cache-Control header',
+        owner,
+        repo: repoName,
+        page: pagination.page,
+        perPage: pagination.perPage,
+      }),
+    );
   }
 
   // Check GitHub rate limit before making API calls

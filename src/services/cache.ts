@@ -1,5 +1,10 @@
 import type { Redis } from '@upstash/redis/cloudflare';
-import { buildStargazerCacheKey, buildRepoCachePattern } from '../utils/cache';
+import {
+  buildStargazerCacheKey,
+  buildRepoCachePattern,
+  isStale,
+  shouldProactiveRefresh,
+} from '../utils/cache';
 import type { CachedStargazerData, CacheResult } from '../types/cache';
 import { CACHE_CONFIG } from '../types/cache';
 import type { StargazerListResponse } from '../types/stargazers';
@@ -33,12 +38,16 @@ export async function getStargazersFromCache(
     }
 
     const age = Math.floor(Date.now() / 1000) - cached.cachedAt;
+    const dataIsStale = isStale(cached.cachedAt, CACHE_CONFIG.ttlSeconds);
+    const needsRefresh = dataIsStale || shouldProactiveRefresh(cached.cachedAt);
 
     return {
       hit: true,
       data: cached.data,
       cachedAt: cached.cachedAt,
       age,
+      isStale: dataIsStale,
+      shouldRefresh: needsRefresh,
     };
   } catch (error) {
     console.error(

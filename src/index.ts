@@ -12,9 +12,8 @@ import { Env } from './types';
 import type { RateLimitInfo } from './types/ratelimit';
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    return withErrorHandler(async (req, e) => {
-      const url = new URL(req.url);
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
 
       if (url.pathname === '/health' && req.method === 'GET') {
         return handleHealth(e);
